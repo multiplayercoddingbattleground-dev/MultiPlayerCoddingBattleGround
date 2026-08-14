@@ -14,12 +14,35 @@ function App() {
     <BrowserRouter>
       <MainLayout>
         <Routes>
+
           <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/battle" element={<Battle />} />
-          <Route path="/results" element={<Results />} />
+
+          <Route
+            path="/login"
+            element={<Login />}
+          />
+
+          <Route
+            path="/register"
+            element={<Register />}
+          />
+
+          <Route
+            path="/dashboard"
+            element={<Dashboard />}
+          />
+
+          {/* Battle room with dynamic code */}
+          <Route
+            path="/battle/:roomCode"
+            element={<Battle />}
+          />
+
+          <Route
+            path="/results"
+            element={<Results />}
+          />
+
         </Routes>
       </MainLayout>
     </BrowserRouter>
