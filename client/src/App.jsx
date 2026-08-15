@@ -1,7 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
-import MainLayout from "./layouts/MainLayout";
-
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -12,39 +10,24 @@ import Results from "./pages/Results";
 function App() {
   return (
     <BrowserRouter>
-      <MainLayout>
-        <Routes>
+      <Routes>
 
-          <Route path="/" element={<Home />} />
+        <Route path="/" element={<Home />} />
 
-          <Route
-            path="/login"
-            element={<Login />}
-          />
+        <Route path="/login" element={<Login />} />
 
-          <Route
-            path="/register"
-            element={<Register />}
-          />
+        <Route path="/register" element={<Register />} />
 
-          <Route
-            path="/dashboard"
-            element={<Dashboard />}
-          />
+        <Route path="/dashboard" element={<Dashboard />} />
 
-          {/* Battle room with dynamic code */}
-          <Route
-            path="/battle/:roomCode"
-            element={<Battle />}
-          />
+        <Route
+          path="/battle/:roomCode"
+          element={<Battle />}
+        />
 
-          <Route
-            path="/results"
-            element={<Results />}
-          />
+        <Route path="/results" element={<Results />} />
 
-        </Routes>
-      </MainLayout>
+      </Routes>
     </BrowserRouter>
   );
 }
