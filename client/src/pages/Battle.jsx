@@ -1,234 +1,358 @@
-import React, { useState } from 'react';
-import {
-  Play,
-  Send,
-  ShieldAlert,
-  Clock,
-  Terminal,
-  Users
-} from 'lucide-react';
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { getBattle, getProblemById, runCode, submitCode } from "../services/api";
+import { useAuth } from "../context/AuthContext";
+import socket from "../services/socket";
+import CodeEditor from "../components/CodeEditor";
+import BattleTimer from "../components/BattleTimer";
+
+const LANGUAGES = ["javascript", "python", "java", "cpp"];
+
 function Battle() {
-  return (
-    <section className="battle-page">
-      <div className="battle-topbar">
-        <div>
-          <h2>⚔ Coding Battle</h2>
-          <p>Problem #001</p>
-        </div>
+  const { roomCode } = useParams();
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
-        <div className="timer">
-          ⏱ 29:59
-        </div>
-      </div>
+  const [battle, setBattle] = useState(null);
+  const [problem, setProblem] = useState(null);
+  const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-      <div className="battle-layout">
+  const [players, setPlayers] = useState([]);
+  const [readyIds, setReadyIds] = useState(new Set());
+  const [started, setStarted] = useState(false);
+  const [startTime, setStartTime] = useState(null);
 
-        <div className="problem-panel">
-          <h2>Two Sum</h2>
+  const [language, setLanguage] = useState("javascript");
+  const [code, setCode] = useState("");
+  const [running, setRunning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [consoleLines, setConsoleLines] = useState([
+    { text: "Waiting for you to run or submit code...", type: "info" },
+  ]);
 
-          <p>
-            Given an array of integers and a target value,
-            return the indices of the two numbers that add up
-            to the target.
-          </p>
+  const codeRef = useRef(code);
+  codeRef.current = code;
 
-          <h3>Example</h3>
-
-          <pre>
-{`Input:
-nums = [2, 7, 11, 15]
-target = 9
-
-Output:
-[0, 1]`}
-          </pre>
-
-          <h3>Constraints</h3>
-
-          <ul>
-            <li>2 ≤ nums.length</li>
-            <li>Numbers are integers</li>
-            <li>Exactly one solution exists</li>
-          </ul>
-        </div>
-
-        <div className="editor-panel">
-
-          <div className="editor-header">
-            <select>
-              <option>JavaScript</option>
-              <option>Python</option>
-              <option>Java</option>
-              <option>C++</option>
-            </select>
-
-            <button className="submit-btn">
-              ▶ Submit
-            </button>
-          </div>
-
-          <textarea
-            className="code-editor"
-            defaultValue={`function twoSum(nums, target) {
-  
-}`}
-          />
-
-        </div>
-      </div>
-    </section>
+  const isHost = Boolean(
+    battle && battle.players[0] && String(battle.players[0]._id) === String(user.id)
   );
-}
-export default function ArenaUI() {
-  const [playerCount, setPlayerCount] = useState(4); // Toggle 1, 2, 3, or 4 players
+  const selfReady = readyIds.has(user.id);
 
-  // Dummy Opponent Data
-  const opponents = [
-    { id: 2, name: "Cypher_X", progress: 80, tests: "8/10", status: "Coding...", color: "border-purple-500 text-purple-400" },
-    { id: 3, name: "ByteMaster", progress: 40, tests: "4/10", status: "Debugging", color: "border-rose-500 text-rose-400" },
-    { id: 4, name: "NullPointer", progress: 90, tests: "9/10", status: "Executing", color: "border-amber-500 text-amber-400" },
-  ];
+  const addConsole = (text, type = "info") =>
+    setConsoleLines((prev) => [...prev, { text, type }]);
+
+  const nameFor = (userId) =>
+    players.find((p) => p.id === userId)?.name || "Opponent";
+
+  // Load the battle + full problem details
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const battleData = await getBattle(roomCode);
+        if (cancelled) return;
+        setBattle(battleData);
+
+        if (battleData.problem) {
+          const problemId = battleData.problem._id || battleData.problem;
+          const problemData = await getProblemById(problemId);
+          if (cancelled) return;
+          setProblem(problemData);
+        }
+      } catch (err) {
+        if (!cancelled) setLoadError(err.message || "Could not load this battle room");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [roomCode]);
+
+  // Realtime room connection
+  useEffect(() => {
+    socket.connect();
+    socket.emit("battle:join", { roomCode, userId: user.id, name: user.name });
+
+    const onPlayerJoined = ({ players: roomPlayers }) => setPlayers(roomPlayers);
+    const onPlayerReady = ({ userId }) =>
+      setReadyIds((prev) => new Set(prev).add(userId));
+    const onStarted = ({ startTime: ts }) => {
+      setStarted(true);
+      setStartTime(ts);
+      addConsole("Battle started! Good luck.", "success");
+    };
+    const onOpponentStatus = ({ userId, status }) =>
+      setPlayers((prev) => prev.map((p) => (p.id === userId ? { ...p, status } : p)));
+    const onOpponentSubmitted = ({ userId, result }) => {
+      setPlayers((prev) =>
+        prev.map((p) => (p.id === userId ? { ...p, status: "submitted" } : p))
+      );
+      addConsole(`${nameFor(userId)} submitted (${result?.status || "unknown"})`, "info");
+    };
+    const onFinished = ({ winnerId }) => {
+      navigate("/results", {
+        state: {
+          roomCode,
+          winnerId,
+          winnerName: nameFor(winnerId),
+          isWinner: winnerId === user.id,
+        },
+      });
+    };
+    const onPlayerLeft = ({ userId }) =>
+      setPlayers((prev) => prev.filter((p) => p.id !== userId));
+
+    socket.on("battle:playerJoined", onPlayerJoined);
+    socket.on("battle:playerReady", onPlayerReady);
+    socket.on("battle:started", onStarted);
+    socket.on("battle:opponentStatus", onOpponentStatus);
+    socket.on("battle:opponentSubmitted", onOpponentSubmitted);
+    socket.on("battle:finished", onFinished);
+    socket.on("battle:playerLeft", onPlayerLeft);
+
+    return () => {
+      socket.off("battle:playerJoined", onPlayerJoined);
+      socket.off("battle:playerReady", onPlayerReady);
+      socket.off("battle:started", onStarted);
+      socket.off("battle:opponentStatus", onOpponentStatus);
+      socket.off("battle:opponentSubmitted", onOpponentSubmitted);
+      socket.off("battle:finished", onFinished);
+      socket.off("battle:playerLeft", onPlayerLeft);
+      socket.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomCode, user.id]);
+
+  const handleReady = () => {
+    socket.emit("battle:ready", { roomCode, userId: user.id });
+    setReadyIds((prev) => new Set(prev).add(user.id));
+  };
+
+  const handleStart = () => {
+    socket.emit("battle:start", { roomCode, startTime: Date.now() });
+  };
+
+  const handleRun = async () => {
+    if (!problem) return;
+    setRunning(true);
+    socket.emit("battle:statusUpdate", { roomCode, userId: user.id, status: "testing" });
+
+    try {
+      const result = await runCode({ code: codeRef.current, language, problemId: problem._id });
+      result.results?.forEach((r, i) =>
+        addConsole(
+          `Sample ${i + 1}: ${r.passed ? "passed" : "failed"}${r.passed ? "" : ` (expected ${r.expectedOutput}, got ${r.actualOutput})`}`,
+          r.passed ? "success" : "error"
+        )
+      );
+      if (result.simulated) {
+        addConsole("Note: code execution is running in simulated (stub) mode.", "info");
+      }
+    } catch (err) {
+      addConsole(err.message || "Run failed", "error");
+    } finally {
+      setRunning(false);
+      socket.emit("battle:statusUpdate", { roomCode, userId: user.id, status: "coding" });
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!problem || !battle) return;
+    setSubmitting(true);
+
+    try {
+      const { submission, results } = await submitCode({
+        code: codeRef.current,
+        language,
+        problemId: problem._id,
+        battleId: battle._id,
+      });
+
+      addConsole(
+        `Submitted: ${submission.status} (${submission.testCasesPassed}/${submission.totalTestCases} tests passed)`,
+        submission.status === "accepted" ? "success" : "error"
+      );
+
+      socket.emit("battle:submit", {
+        roomCode,
+        userId: user.id,
+        result: {
+          status: submission.status,
+          testCasesPassed: submission.testCasesPassed,
+          totalTestCases: submission.totalTestCases,
+        },
+      });
+
+      if (submission.status === "accepted") {
+        socket.emit("battle:finish", { roomCode, winnerId: user.id });
+        navigate("/results", {
+          state: {
+            roomCode,
+            winnerId: user.id,
+            winnerName: user.name,
+            isWinner: true,
+            submission,
+            results,
+            problemTitle: problem.title,
+          },
+        });
+      }
+    } catch (err) {
+      addConsole(err.message || "Submit failed", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="battle-page">
+        <p style={{ padding: 40 }}>Loading battle room...</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="battle-page">
+        <p style={{ padding: 40 }}>
+          {loadError} — <Link to="/battle-lobby">Back to lobby</Link>
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="h-screen w-screen bg-[#0b0e14] text-slate-200 flex flex-col font-sans overflow-hidden select-none">
-      
-      {/* 1. TOP BAR / ARENA HEADER */}
-      <header className="h-16 border-b border-slate-800 bg-[#0d1117] px-6 flex items-center justify-between shadow-lg">
-        <div className="flex items-center space-x-3">
-          <div className="h-3 w-3 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_#00f0ff]" />
-          <h1 className="text-xl font-black tracking-wider uppercase bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 bg-clip-text text-transparent">
-            CODING BATTLEGROUND
-          </h1>
+    <div className="battle-page">
+      <header className="arena-header">
+        <div className="arena-title">
+          <span className="online-dot" />
+          <h1>⚔ {problem ? problem.title : "Coding Battle"}</h1>
         </div>
 
-        {/* Global Match Clock */}
-        <div className="flex items-center space-x-2 bg-slate-900/80 px-4 py-1.5 rounded-full border border-slate-700">
-          <Clock className="w-4 h-4 text-cyan-400" />
-          <span className="font-mono font-bold text-lg text-slate-100">14:58</span>
-        </div>
-
-        {/* Match Controls & Player Switcher */}
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center bg-slate-900 rounded-lg p-1 border border-slate-800 text-xs">
-            <Users className="w-4 h-4 mr-2 ml-1 text-slate-400" />
-            {[1, 2, 3, 4].map((num) => (
-              <button
-                key={num}
-                onClick={() => setPlayerCount(num)}
-                className={`px-2.5 py-1 rounded transition-colors ${
-                  playerCount === num ? 'bg-cyan-500/20 text-cyan-400 font-bold border border-cyan-500/50' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {num}P
-              </button>
-            ))}
-          </div>
-          
-          <button className="flex items-center space-x-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 px-4 py-2 rounded-lg font-bold text-slate-950 text-sm shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all">
-            <Send className="w-4 h-4 fill-current" />
-            <span>SUBMIT CODE</span>
-          </button>
-        </div>
+        {started ? (
+          <BattleTimer key={startTime} initialTime={900} />
+        ) : (
+          <span className="battle-timer">Room {roomCode}</span>
+        )}
       </header>
 
-      {/* 2. MAIN BATTLE ARENA (GRID) */}
-      <div className="flex-1 grid grid-cols-12 gap-2 p-3 overflow-hidden">
-        
-        {/* LEFT PANEL: Problem Details & Test Cases */}
-        <div className="col-span-4 bg-[#12161f] border border-slate-800/80 rounded-xl flex flex-col overflow-hidden">
-          <div className="bg-slate-900/60 p-3 border-b border-slate-800 font-semibold text-xs tracking-wider text-slate-400 uppercase flex items-center">
-            <ShieldAlert className="w-4 h-4 mr-2 text-cyan-400" /> Challenge Objective
-          </div>
-          <div className="p-4 flex-1 overflow-y-auto space-y-4 text-sm text-slate-300">
-            <h2 className="text-lg font-bold text-white">1. Two-Sum Multiplier Matrix</h2>
-            <p className="leading-relaxed text-xs text-slate-400">
-              Given an array of integers <code className="bg-slate-800 px-1 py-0.5 rounded text-cyan-300">nums</code> and an integer target, return indices of the two numbers such that they add up to target.
-            </p>
-            
-            {/* Example Box */}
-            <div className="bg-slate-900/90 border border-slate-800 rounded-lg p-3 space-y-2 text-xs font-mono">
-              <span className="text-slate-400">Input:</span> <span className="text-purple-300">nums = [2,7,11,15], target = 9</span><br/>
-              <span className="text-slate-400">Output:</span> <span className="text-emerald-400">[0,1]</span>
-            </div>
-          </div>
-        </div>
+      {!started && (
+        <div className="battle-controls" style={{ justifyContent: "space-between" }}>
+          <span>
+            {players.length} player(s) in room.{" "}
+            {isHost ? "You are the host." : "Waiting for the host to start..."}
+          </span>
 
-        {/* CENTER PANEL: Code Editor Interface */}
-        <div className="col-span-8 flex flex-col gap-2 overflow-hidden">
-          <div className="flex-1 bg-[#0d1117] border border-slate-800 rounded-xl flex flex-col overflow-hidden relative">
-            
-            {/* Editor Header */}
-            <div className="bg-slate-900/40 border-b border-slate-800 px-4 py-2 flex items-center justify-between text-xs">
-              <span className="font-mono text-slate-400">main.py (Player 1 - You)</span>
-              <button className="flex items-center space-x-1 text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1 rounded hover:bg-emerald-900/50">
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Run Tests</span>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="run-btn" onClick={handleReady} disabled={selfReady}>
+              {selfReady ? "Ready ✓" : "Ready"}
+            </button>
+
+            {isHost && (
+              <button className="submit-btn" onClick={handleStart}>
+                Start Battle
               </button>
-            </div>
-
-            {/* Mock Code Editor Area */}
-            <div className="flex-1 p-4 font-mono text-sm leading-relaxed overflow-y-auto bg-[#0a0d12]">
-              <div className="flex">
-                <span className="w-8 select-none text-slate-600 text-right pr-4">1</span>
-                <span className="text-purple-400">def</span> <span className="text-blue-400">twoSum</span>(self, nums: List[int], target: int) -&gt; List[int]:
-              </div>
-              <div className="flex">
-                <span className="w-8 select-none text-slate-600 text-right pr-4">2</span>
-                <span className="pl-4 text-slate-400"># Implement optimal dynamic lookup table</span>
-              </div>
-              <div className="flex">
-                <span className="w-8 select-none text-slate-600 text-right pr-4">3</span>
-                <span className="pl-4 text-slate-100">seen = {}</span>
-              </div>
-              <div className="flex bg-cyan-950/30 -mx-4 px-4 border-l-2 border-cyan-400">
-                <span className="w-8 select-none text-slate-600 text-right pr-4">4</span>
-                <span className="pl-4 text-purple-400">for</span> <span className="text-slate-100">i, num</span> <span className="text-purple-400">in</span> <span className="text-blue-400">enumerate</span>(nums):
-              </div>
-            </div>
-
-            {/* Bottom Console / Output */}
-            <div className="h-28 border-t border-slate-800 bg-[#0c0f14] p-3 font-mono text-xs flex flex-col">
-              <div className="flex items-center space-x-2 text-slate-500 mb-1">
-                <Terminal className="w-3.5 h-3.5" />
-                <span>Execution Output</span>
-              </div>
-              <div className="text-emerald-400">✔ Test case 1 passed (12ms)</div>
-              <div className="text-emerald-400">✔ Test case 2 passed (8ms)</div>
-              <div className="text-slate-500">Waiting for full suite execution...</div>
-            </div>
+            )}
           </div>
-        </div>
-      </div>
-
-      {/* 3. BOTTOM RIVALS TELEMETRY TRAY (Shows for 2, 3, or 4 Players) */}
-      {playerCount > 1 && (
-        <div className="h-24 bg-[#0d1117] border-t border-slate-800 px-4 py-2 grid grid-cols-3 gap-3">
-          {opponents.slice(0, playerCount - 1).map((opp) => (
-            <div key={opp.id} className={`bg-slate-900/60 border rounded-lg p-2.5 flex flex-col justify-between ${opp.color}`}>
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs tracking-wide">{opp.name}</span>
-                <span className="text-[10px] font-mono bg-slate-800 px-2 py-0.5 rounded text-slate-300">
-                  {opp.tests} Passed
-                </span>
-              </div>
-
-              {/* Rival Progress Bar */}
-              <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                <div 
-                  className="bg-current h-full transition-all duration-500" 
-                  style={{ width: `${opp.progress}%` }} 
-                />
-              </div>
-
-              <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono">
-                <span>Status: {opp.status}</span>
-                <span>Speed: 74 WPM</span>
-              </div>
-            </div>
-          ))}
         </div>
       )}
 
+      <div className="battle-grid">
+        <div className="problem-panel">
+          <div className="problem-header">Challenge</div>
+
+          <div className="problem-content">
+            {problem ? (
+              <>
+                <h2>
+                  {problem.title} · {problem.difficulty}
+                </h2>
+                <p>{problem.description}</p>
+
+                {problem.constraints && (
+                  <>
+                    <h3>Constraints</h3>
+                    <p>{problem.constraints}</p>
+                  </>
+                )}
+
+                {(problem.sampleInput || problem.sampleOutput) && (
+                  <div className="example-box">
+                    Input: {problem.sampleInput}
+                    <br />
+                    Output: {problem.sampleOutput}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p>No problem is assigned to this battle yet.</p>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+          <div className="battle-controls" style={{ justifyContent: "space-between" }}>
+            <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+              {LANGUAGES.map((lang) => (
+                <option key={lang} value={lang}>
+                  {lang}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <CodeEditor language={language} value={code} onChange={setCode} />
+
+          <div className="battle-controls">
+            <button className="run-btn" onClick={handleRun} disabled={running || !problem}>
+              ▶ {running ? "Running..." : "Run Tests"}
+            </button>
+
+            <button className="submit-btn" onClick={handleSubmit} disabled={submitting || !problem}>
+              📤 {submitting ? "Submitting..." : "Submit Code"}
+            </button>
+          </div>
+
+          <div className="execution-console">
+            <div className="console-title">Execution Output</div>
+            {consoleLines.map((line, i) => (
+              <div key={i} className={line.type === "error" ? "console-error" : "console-success"}>
+                {line.text}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="opponents-tray">
+        {players
+          .filter((p) => p.id !== user.id)
+          .map((p) => (
+            <div className="opponent-card" key={p.id}>
+              <div className="opponent-name">
+                <span>{p.name}</span>
+                <span>{p.status}</span>
+              </div>
+              <div className="opponent-progress">
+                <div
+                  className="opponent-progress-bar"
+                  style={{
+                    width:
+                      p.status === "submitted" ? "100%" : p.status === "testing" ? "60%" : "30%",
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+      </div>
     </div>
   );
 }
+
+export default Battle;

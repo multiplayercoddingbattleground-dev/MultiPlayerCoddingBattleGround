@@ -1,7 +1,15 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 function Navbar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, isAuthenticated, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+  };
 
   return (
     <nav className="navbar">
@@ -29,7 +37,7 @@ function Navbar() {
         </Link>
 
         <Link
-          to="/battle/ABC123"
+          to="/battle-lobby"
           className={
             location.pathname.startsWith("/battle")
               ? "active"
@@ -42,7 +50,16 @@ function Navbar() {
       </div>
 
       <div className="navbar-user">
-        <span>👤 Lakshman</span>
+        {isAuthenticated ? (
+          <>
+            <span>👤 {user.name}</span>
+            <button className="navbar-logout-btn" onClick={handleLogout}>
+              Logout
+            </button>
+          </>
+        ) : (
+          <Link to="/login">Login</Link>
+        )}
       </div>
 
     </nav>

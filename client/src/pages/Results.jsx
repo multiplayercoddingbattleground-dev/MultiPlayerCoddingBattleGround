@@ -1,9 +1,17 @@
 import React from "react";
-import { Trophy, Clock, CheckCircle, ArrowLeft, Medal } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Trophy, Clock, CheckCircle, ArrowLeft } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 function Results() {
   const navigate = useNavigate();
+  const { state } = useLocation();
+
+  const winnerName = state?.winnerName || "Unknown";
+  const isWinner = Boolean(state?.isWinner);
+  const submission = state?.submission;
+  const testsPassed = submission
+    ? `${submission.testCasesPassed} / ${submission.totalTestCases}`
+    : "—";
 
   return (
     <div className="results-page">
@@ -12,7 +20,13 @@ function Results() {
       <div className="results-header">
         <Trophy size={32} />
         <h1>Battle Complete</h1>
-        <p>Great job! Here are the final results.</p>
+        <p>
+          {state
+            ? isWinner
+              ? "Great job! You solved it first."
+              : `${winnerName} solved it first this time.`
+            : "Great job! Here are the final results."}
+        </p>
       </div>
 
       {/* Winner */}
@@ -26,36 +40,13 @@ function Results() {
           WINNER
         </p>
 
-        <h2>Lakshman</h2>
+        <h2>{winnerName}</h2>
 
-        <div className="winner-score">
-          850 Points
-        </div>
-
-      </div>
-
-      {/* Scoreboard */}
-      <div className="scoreboard">
-
-        <div className="score-card first">
-          <Medal size={25} />
-
-          <h3>1st Place</h3>
-
-          <p>Lakshman</p>
-
-          <strong>850</strong>
-        </div>
-
-        <div className="score-card second">
-          <Medal size={25} />
-
-          <h3>2nd Place</h3>
-
-          <p>Cypher_X</p>
-
-          <strong>720</strong>
-        </div>
+        {submission && (
+          <div className="winner-score">
+            {submission.status === "accepted" ? "Accepted" : submission.status}
+          </div>
+        )}
 
       </div>
 
@@ -71,23 +62,23 @@ function Results() {
 
             <span>Tests Passed</span>
 
-            <strong>9 / 10</strong>
+            <strong>{testsPassed}</strong>
           </div>
 
           <div className="stat">
             <Clock size={22} />
 
-            <span>Battle Time</span>
+            <span>Room Code</span>
 
-            <strong>12:45</strong>
+            <strong>{state?.roomCode || "—"}</strong>
           </div>
 
           <div className="stat">
             <Trophy size={22} />
 
-            <span>Score</span>
+            <span>Result</span>
 
-            <strong>850</strong>
+            <strong>{isWinner ? "Victory" : "Defeat"}</strong>
           </div>
 
         </div>

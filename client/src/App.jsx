@@ -8,6 +8,8 @@ import Battle from "./pages/Battle";
 import Results from "./pages/Results";
 
 import BattleLobby from "./components/BattleLobby";
+import ProtectedRoute from "./components/ProtectedRoute";
+import MainLayout from "./layouts/MainLayout";
 
 function App() {
   return (
@@ -32,24 +34,44 @@ function App() {
 
         <Route
           path="/dashboard"
-          element={<Dashboard />}
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <Dashboard />
+              </MainLayout>
+            </ProtectedRoute>
+          }
         />
 
         {/* Battle Lobby */}
         <Route
           path="/battle-lobby"
-          element={<BattleLobby />}
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <BattleLobby />
+              </MainLayout>
+            </ProtectedRoute>
+          }
         />
 
         {/* Actual Battle */}
         <Route
           path="/battle/:roomCode"
-          element={<Battle />}
+          element={
+            <ProtectedRoute>
+              <Battle />
+            </ProtectedRoute>
+          }
         />
 
         <Route
           path="/results"
-          element={<Results />}
+          element={
+            <ProtectedRoute>
+              <Results />
+            </ProtectedRoute>
+          }
         />
 
       </Routes>

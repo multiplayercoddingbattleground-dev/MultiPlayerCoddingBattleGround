@@ -1,28 +1,37 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
 
 function Register() {
+  const { register } = useAuth();
+  const navigate = useNavigate();
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
 
     if (password !== confirmPassword) {
-      alert("Passwords do not match!");
+      setError("Passwords do not match!");
       return;
     }
 
-    console.log("Registration data:", {
-      username,
-      email,
-      password,
-    });
+    setSubmitting(true);
 
-    alert("Registration button clicked!");
+    try {
+      await register(username, email, password);
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.message || "Registration failed");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -37,6 +46,8 @@ function Register() {
         <p className="auth-subtitle">
           Join the multiplayer coding battle.
         </p>
+
+        {error && <p className="auth-error">{error}</p>}
 
         <form onSubmit={handleSubmit}>
 
@@ -85,8 +96,9 @@ function Register() {
           <button
             type="submit"
             className="primary-btn full-btn"
+            disabled={submitting}
           >
-            Create Account
+            {submitting ? "Creating..." : "Create Account"}
           </button>
 
         </form>

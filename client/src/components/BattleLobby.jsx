@@ -8,45 +8,37 @@ import {
   Swords,
   CheckCircle
 } from "lucide-react";
+import { createBattle, joinBattle } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 function BattleLobby() {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [roomCode, setRoomCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [copied, setCopied] = useState(false);
   const [players, setPlayers] = useState([]);
+  const [creating, setCreating] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [error, setError] = useState("");
 
-  // Generate a random 6-character room code
-  const generateRoomCode = () => {
-    const characters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  // Create a new battle via the backend
+  const handleCreateBattle = async () => {
+    setError("");
+    setCreating(true);
 
-    let code = "";
+    try {
+      const battle = await createBattle();
 
-    for (let i = 0; i < 6; i++) {
-      code += characters.charAt(
-        Math.floor(Math.random() * characters.length)
-      );
+      setRoomCode(battle.roomCode);
+      setPlayers([{ id: user.id, name: user.name, host: true }]);
+      setCopied(false);
+    } catch (err) {
+      setError(err.message || "Failed to create battle");
+    } finally {
+      setCreating(false);
     }
-
-    return code;
-  };
-
-  // Create a new battle
-  const handleCreateBattle = () => {
-    const newRoomCode = generateRoomCode();
-
-    setRoomCode(newRoomCode);
-
-    setPlayers([
-      {
-        id: 1,
-        name: "Lakshman",
-        host: true
-      }
-    ]);
-
-    setCopied(false);
   };
 
   // Copy room code
@@ -67,27 +59,32 @@ function BattleLobby() {
     }
   };
 
-  // Join an existing battle
-  const handleJoinBattle = () => {
+  // Join an existing battle via the backend
+  const handleJoinBattle = async () => {
     const code = joinCode.trim().toUpperCase();
 
     if (!code) {
-      alert("Please enter a room code.");
+      setError("Please enter a room code.");
       return;
     }
 
-    if (code.length !== 6) {
-      alert("Room code must contain 6 characters.");
-      return;
-    }
+    setError("");
+    setJoining(true);
 
-    navigate(`/battle/${code}`);
+    try {
+      const battle = await joinBattle(code);
+      navigate(`/battle/${battle.roomCode}`);
+    } catch (err) {
+      setError(err.message || "Failed to join battle");
+    } finally {
+      setJoining(false);
+    }
   };
 
-  // Start created battle
+  // Enter the room you just created
   const handleStartBattle = () => {
     if (!roomCode) {
-      alert("Please create a battle first.");
+      setError("Please create a battle first.");
       return;
     }
 
@@ -114,6 +111,8 @@ function BattleLobby() {
 
       </div>
 
+      {error && <p className="auth-error" style={{ width: "min(950px, 92%)", margin: "16px auto 0" }}>{error}</p>}
+
       {/* Main Lobby */}
       <div className="lobby-content">
 
@@ -135,10 +134,11 @@ function BattleLobby() {
             <button
               className="lobby-primary-btn"
               onClick={handleCreateBattle}
+              disabled={creating}
             >
               <Swords size={18} />
 
-              Create New Battle
+              {creating ? "Creating..." : "Create New Battle"}
             </button>
 
           ) : (
@@ -234,7 +234,7 @@ function BattleLobby() {
                   fill="currentColor"
                 />
 
-                Start Battle
+                Enter Battle Room
               </button>
 
             </div>
@@ -271,10 +271,11 @@ function BattleLobby() {
           <button
             className="lobby-secondary-btn"
             onClick={handleJoinBattle}
+            disabled={joining}
           >
             <LogIn size={18} />
 
-            Join Battle
+            {joining ? "Joining..." : "Join Battle"}
           </button>
 
         </div>

@@ -1,19 +1,29 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
 
 function Login() {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
+    setSubmitting(true);
 
-    console.log("Login data:", {
-      email,
-      password,
-    });
-
-    alert("Login button clicked!");
+    try {
+      await login(email, password);
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.message || "Login failed");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -27,6 +37,8 @@ function Login() {
         <p className="auth-subtitle">
           Login to continue your coding battle.
         </p>
+
+        {error && <p className="auth-error">{error}</p>}
 
         <form onSubmit={handleSubmit}>
 
@@ -57,8 +69,9 @@ function Login() {
           <button
             type="submit"
             className="primary-btn full-btn"
+            disabled={submitting}
           >
-            Login
+            {submitting ? "Logging in..." : "Login"}
           </button>
 
         </form>
