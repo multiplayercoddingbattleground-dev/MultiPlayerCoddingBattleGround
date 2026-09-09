@@ -1,38 +1,37 @@
 import Editor from "@monaco-editor/react";
-import { useState } from "react";
 
-function CodeEditor() {
-
-  const [code, setCode] = useState(
-`def twoSum(nums, target):
-    seen = {}
-
-    for i, num in enumerate(nums):
-        complement = target - num
-
-        if complement in seen:
-            return [seen[complement], i]
-
-        seen[num] = i
-
-    return []
-`
-  );
-
+function CodeEditor({
+  language = "python",
+  value = "",
+  onChange = () => {},
+}) {
   return (
     <div className="code-editor">
       <Editor
         height="100%"
-        defaultLanguage="python"
-        value={code}
-        onChange={(value) => setCode(value || "")}
+        language={language}
+        value={value}
+        onChange={(newValue) => {
+          onChange(newValue || "");
+        }}
         theme="vs-dark"
         options={{
           fontSize: 14,
           minimap: {
-            enabled: false
+            enabled: false,
           },
-          automaticLayout: true
+          automaticLayout: true,
+          scrollBeyondLastLine: false,
+          wordWrap: "on",
+          tabSize: 4,
+          insertSpaces: true,
+          smoothScrolling: true,
+          cursorBlinking: "smooth",
+          renderWhitespace: "selection",
+          padding: {
+            top: 12,
+            bottom: 12,
+          },
         }}
       />
     </div>
